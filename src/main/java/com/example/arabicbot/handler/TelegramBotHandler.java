@@ -51,7 +51,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
     public void initializeBotCommands() {
         try {
             List<BotCommand> commands = new ArrayList<>();
-            commands.add(new BotCommand("start", "Начать тест"));
+            commands.add(new BotCommand("start", "Главное меню"));
             commands.add(new BotCommand("menu", "Меню"));
             commands.add(new BotCommand("help", "Помощь"));
             
@@ -79,7 +79,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
 
         // Первая строка
         KeyboardRow row1 = new KeyboardRow();
-        row1.add(new KeyboardButton("📚 Начать тест"));
+        row1.add(new KeyboardButton("📚 Выбрать урок"));
         keyboard.add(row1);
 
         // Вторая строка
@@ -130,19 +130,41 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
         }
 
         // Обработка команд и кнопок клавиатуры
-        if (messageText.equals("/start") || messageText.equals("📚 Начать тест")) {
-            // Для обычных пользователей показываем первый урок сразу
-            if (!botConfig.isAdmin(userId)) {
-                List<Lesson> lessons = lessonService.getAllLessons();
-                if (!lessons.isEmpty()) {
-                    sendLesson(chatId, lessons.get(0).getId(), userId);
-                } else {
-                    sendMessageWithKeyboard(chatId, "Уроки пока не добавлены.", userId);
-                }
-            } else {
-                // Для админов показываем админ-меню
+        if (messageText.equals("/start")) {
+            // Показываем главное меню
+            if (botConfig.isAdmin(userId)) {
+                // Для админов показываем приветствие и админ-меню
+                sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
                 sendAdminMenu(chatId);
+            } else {
+                // Для обычных пользователей проверяем, новый ли пользователь
+                Optional<UserProgress> progressOpt = userProgressService.getUserProgress(userId);
+                
+                // Пользователь считается новым, если:
+                // 1. У него нет записи UserProgress, ИЛИ
+                // 2. У него нет currentLessonId и нет lastAnsweredQuestionId (никогда не использовал уроки)
+                boolean isNewUser = progressOpt.isEmpty() || 
+                    (progressOpt.get().getCurrentLessonId() == null && 
+                     progressOpt.get().getLastAnsweredQuestionId() == null);
+                
+                if (isNewUser) {
+                    // Новый пользователь - отправляем первый урок
+                    List<Lesson> lessons = lessonService.getAllLessons();
+                    if (!lessons.isEmpty()) {
+                        // Отправляем первый урок (с наименьшим ID)
+                        sendLesson(chatId, lessons.get(0).getId(), userId);
+                    } else {
+                        // Если уроков нет, показываем главное меню
+                        sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
+                    }
+                } else {
+                    // Существующий пользователь - показываем главное меню
+                    sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
+                }
             }
+        } else if (messageText.equals("📚 Выбрать урок")) {
+            // Показываем список уроков
+            sendLessonsList(chatId);
         } else if (messageText.equals("/menu") || messageText.equals("🔧 Админ-меню")) {
             if (botConfig.isAdmin(userId)) {
                 sendAdminMenu(chatId);
@@ -704,13 +726,13 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
             }
             sendTestQuestion(chatId, nextQuestionOpt.get());
         } else {
-            // Все вопросы пройдены, автоматически переходим к следующему уроку
+            // Все вопросы пройдены, показываем кнопки навигации
             try {
-                Thread.sleep(1500); // Небольшая задержка перед следующим уроком
+                Thread.sleep(1500); // Небольшая задержка перед показом кнопок
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            handleNextLesson(chatId, userId);
+            sendNavigationButtons(chatId, lessonId);
         }
     }
 
@@ -795,7 +817,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
 
         SendMessage message = new SendMessage();
         message.setChatId(chatId.toString());
-        message.setText("Что дальше?");
+        message.setText("🎉 Урок завершен!\n\nЧто дальше?");
         message.setReplyMarkup(keyboard);
 
         try {
@@ -857,7 +879,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
         StringBuilder helpText = new StringBuilder();
         helpText.append("📖 Помощь\n\n");
         helpText.append("Доступные команды:\n");
-        helpText.append("📚 Начать тест - начать прохождение уроков\n");
+        helpText.append("📚 Выбрать урок - выбрать урок для прохождения\n");
         helpText.append("📊 Профиль - посмотреть ваш прогресс\n");
         helpText.append("❓ Помощь - показать это сообщение\n");
         
