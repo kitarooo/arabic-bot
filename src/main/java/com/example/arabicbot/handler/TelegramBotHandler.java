@@ -264,7 +264,9 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
                 
             } else if (state.getVideoFileId() == null) {
                 // Шаг 3: Видео (обрабатывается в handleVideo)
+                // Если пользователь отправил текст вместо видео, напоминаем и выходим
                 sendMessage(chatId, "Пожалуйста, отправьте видео файл.");
+                return;
                 
             } else if (currentQuestion.getQuestion() == null) {
                 // Шаг 4: Вопрос для текущего теста
