@@ -137,30 +137,8 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
                 sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
                 sendAdminMenu(chatId);
             } else {
-                // Для обычных пользователей проверяем, новый ли пользователь
-                Optional<UserProgress> progressOpt = userProgressService.getUserProgress(userId);
-                
-                // Пользователь считается новым, если:
-                // 1. У него нет записи UserProgress, ИЛИ
-                // 2. У него нет currentLessonId и нет lastAnsweredQuestionId (никогда не использовал уроки)
-                boolean isNewUser = progressOpt.isEmpty() || 
-                    (progressOpt.get().getCurrentLessonId() == null && 
-                     progressOpt.get().getLastAnsweredQuestionId() == null);
-                
-                if (isNewUser) {
-                    // Новый пользователь - отправляем первый урок
-                    List<Lesson> lessons = lessonService.getAllLessons();
-                    if (!lessons.isEmpty()) {
-                        // Отправляем первый урок (с наименьшим ID)
-                        sendLesson(chatId, lessons.get(0).getId(), userId);
-                    } else {
-                        // Если уроков нет, показываем главное меню
-                        sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
-                    }
-                } else {
-                    // Существующий пользователь - показываем главное меню
-                    sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
-                }
+                // Для обычных пользователей показываем главное меню
+                sendMessageWithKeyboard(chatId, "👋 Добро пожаловать! Выберите действие:", userId);
             }
         } else if (messageText.equals("📚 Выбрать урок")) {
             // Показываем список уроков
