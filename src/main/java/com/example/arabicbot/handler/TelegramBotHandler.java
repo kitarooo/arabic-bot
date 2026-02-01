@@ -340,6 +340,12 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
             } else if (callbackData.equals("choose_lesson")) {
                 // Выбрать урок
                 sendLessonsList(chatId);
+            } else if (callbackData.startsWith("lessons_page:")) {
+                // Пагинация списка уроков
+                String[] parts = callbackData.split(":");
+                String listType = parts[1];
+                int page = Integer.parseInt(parts[2]);
+                sendLessonsList(chatId, page, listType, messageId);
             } else if (callbackData.equals("answered")) {
                 // Игнорируем нажатия на уже отвеченные вопросы
                 return;
@@ -496,6 +502,10 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
     }
 
     private void sendLessonsList(Long chatId) {
+        sendLessonsList(chatId, 0, "list", null);
+    }
+
+    private void sendLessonsList(Long chatId, int page, String listType, Integer messageId) {
         List<Lesson> lessons = lessonService.getAllLessons();
 
         if (lessons.isEmpty()) {
@@ -503,67 +513,97 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
             return;
         }
 
+        int pageSize = 50;
+        int totalPages = (int) Math.ceil((double) lessons.size() / pageSize);
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, lessons.size());
+
         InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
-        for (Lesson lesson : lessons) {
+        // Добавляем уроки для текущей страницы
+        for (int i = startIndex; i < endIndex; i++) {
+            Lesson lesson = lessons.get(i);
             InlineKeyboardButton button = new InlineKeyboardButton();
             button.setText(lesson.getTitle());
-            button.setCallbackData("lesson:" + lesson.getId());
+            
+            // Определяем callback в зависимости от типа списка
+            if ("edit".equals(listType)) {
+                button.setCallbackData("edit_lesson:" + lesson.getId());
+            } else if ("delete".equals(listType)) {
+                button.setCallbackData("delete_lesson:" + lesson.getId());
+            } else {
+                button.setCallbackData("lesson:" + lesson.getId());
+            }
             rows.add(Collections.singletonList(button));
+        }
+
+        // Добавляем кнопки навигации
+        List<InlineKeyboardButton> navRow = new ArrayList<>();
+        if (page > 0) {
+            InlineKeyboardButton prevButton = new InlineKeyboardButton();
+            prevButton.setText("◀️ Предыдущие");
+            prevButton.setCallbackData("lessons_page:" + listType + ":" + (page - 1));
+            navRow.add(prevButton);
+        }
+        if (page < totalPages - 1) {
+            InlineKeyboardButton nextButton = new InlineKeyboardButton();
+            nextButton.setText("Далее ▶️");
+            nextButton.setCallbackData("lessons_page:" + listType + ":" + (page + 1));
+            navRow.add(nextButton);
+        }
+        if (!navRow.isEmpty()) {
+            rows.add(navRow);
+        }
+
+        // Добавляем кнопку возврата в меню для админских списков
+        if ("admin".equals(listType) || "edit".equals(listType) || "delete".equals(listType)) {
+            InlineKeyboardButton backButton = new InlineKeyboardButton();
+            backButton.setText("◀️ Назад в меню");
+            backButton.setCallbackData("admin_menu");
+            rows.add(Collections.singletonList(backButton));
         }
 
         keyboard.setKeyboard(rows);
 
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("📚 Выберите урок:");
-        message.setReplyMarkup(keyboard);
+        String text = "📚 Выберите урок:";
+        if ("edit".equals(listType)) {
+            text = "Выберите урок для редактирования:";
+        } else if ("delete".equals(listType)) {
+            text = "Выберите урок для удаления:";
+        }
+        if (totalPages > 1) {
+            text += "\n\nСтраница " + (page + 1) + " из " + totalPages;
+        }
 
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error sending lessons list", e);
+        if (messageId != null) {
+            // Обновляем существующее сообщение
+            EditMessageText editMessage = new EditMessageText();
+            editMessage.setChatId(chatId.toString());
+            editMessage.setMessageId(messageId);
+            editMessage.setText(text);
+            editMessage.setReplyMarkup(keyboard);
+            try {
+                execute(editMessage);
+            } catch (TelegramApiException e) {
+                log.error("Error updating lessons list", e);
+            }
+        } else {
+            // Отправляем новое сообщение
+            SendMessage message = new SendMessage();
+            message.setChatId(chatId.toString());
+            message.setText(text);
+            message.setReplyMarkup(keyboard);
+            try {
+                execute(message);
+            } catch (TelegramApiException e) {
+                log.error("Error sending lessons list", e);
+            }
         }
     }
 
     private void sendLessonsListWithMenu(Long chatId) {
-        List<Lesson> lessons = lessonService.getAllLessons();
-
-        if (lessons.isEmpty()) {
-            sendMessage(chatId, "Уроки пока не добавлены.");
-            sendAdminMenu(chatId);
-            return;
-        }
-
-        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        for (Lesson lesson : lessons) {
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(lesson.getTitle());
-            button.setCallbackData("lesson:" + lesson.getId());
-            rows.add(Collections.singletonList(button));
-        }
-
-        // Кнопка возврата в меню
-        InlineKeyboardButton backButton = new InlineKeyboardButton();
-        backButton.setText("◀️ Назад в меню");
-        backButton.setCallbackData("admin_menu");
-        rows.add(Collections.singletonList(backButton));
-
-        keyboard.setKeyboard(rows);
-
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("📚 Выберите урок:");
-        message.setReplyMarkup(keyboard);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error sending lessons list with menu", e);
-        }
+        sendLessonsList(chatId, 0, "admin", null);
     }
 
     private void sendLesson(Long chatId, Long lessonId, Long userId) {
@@ -913,42 +953,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
     }
 
     private void sendLessonsListForEdit(Long chatId) {
-        List<Lesson> lessons = lessonService.getAllLessons();
-
-        if (lessons.isEmpty()) {
-            sendMessage(chatId, "Уроки пока не добавлены.");
-            sendAdminMenu(chatId);
-            return;
-        }
-
-        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        for (Lesson lesson : lessons) {
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(lesson.getTitle());
-            button.setCallbackData("edit_lesson:" + lesson.getId());
-            rows.add(Collections.singletonList(button));
-        }
-
-        // Кнопка возврата в меню
-        InlineKeyboardButton backButton = new InlineKeyboardButton();
-        backButton.setText("◀️ Назад в меню");
-        backButton.setCallbackData("admin_menu");
-        rows.add(Collections.singletonList(backButton));
-
-        keyboard.setKeyboard(rows);
-
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("Выберите урок для редактирования:");
-        message.setReplyMarkup(keyboard);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error sending lessons list for edit", e);
-        }
+        sendLessonsList(chatId, 0, "edit", null);
     }
 
     private void handleLessonEditStep(Update update, Long userId, Long chatId, String messageText) {
@@ -1248,42 +1253,7 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
     }
 
     private void sendLessonsListForDelete(Long chatId) {
-        List<Lesson> lessons = lessonService.getAllLessons();
-
-        if (lessons.isEmpty()) {
-            sendMessage(chatId, "Уроки пока не добавлены.");
-            sendAdminMenu(chatId);
-            return;
-        }
-
-        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        for (Lesson lesson : lessons) {
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(lesson.getTitle());
-            button.setCallbackData("delete_lesson:" + lesson.getId());
-            rows.add(Collections.singletonList(button));
-        }
-
-        // Кнопка возврата в меню
-        InlineKeyboardButton backButton = new InlineKeyboardButton();
-        backButton.setText("◀️ Назад в меню");
-        backButton.setCallbackData("admin_menu");
-        rows.add(Collections.singletonList(backButton));
-
-        keyboard.setKeyboard(rows);
-
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("Выберите урок для удаления:");
-        message.setReplyMarkup(keyboard);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error sending lessons list for delete", e);
-        }
+        sendLessonsList(chatId, 0, "delete", null);
     }
 
     private void sendDeleteConfirmation(Long chatId, Long lessonId) {
