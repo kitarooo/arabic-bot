@@ -518,6 +518,27 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
     private void sendLessonsList(Long chatId, int page, String listType, Integer messageId) {
         List<Lesson> lessons = lessonService.getAllLessons();
 
+        // Логируем для отладки
+        if (lessons == null) {
+            log.error("Lessons list is null!");
+            if (messageId != null) {
+                EditMessageText editMessage = new EditMessageText();
+                editMessage.setChatId(chatId.toString());
+                editMessage.setMessageId(messageId);
+                editMessage.setText("Ошибка при загрузке уроков. Попробуйте позже.");
+                try {
+                    execute(editMessage);
+                } catch (TelegramApiException e) {
+                    log.error("Error updating message", e);
+                }
+            } else {
+                sendMessage(chatId, "Ошибка при загрузке уроков. Попробуйте позже.");
+            }
+            return;
+        }
+
+        log.debug("Retrieved {} lessons from database", lessons.size());
+
         if (lessons.isEmpty()) {
             if (messageId != null) {
                 // Обновляем существующее сообщение

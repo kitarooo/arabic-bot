@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,8 +21,10 @@ public class LessonService {
     private final TestQuestionRepository testQuestionRepository;
     private final TestAnswerRepository testAnswerRepository;
 
+    @Transactional(readOnly = true)
     public List<Lesson> getAllLessons() {
-        return lessonRepository.findAllByOrderByIdAsc();
+        List<Lesson> lessons = lessonRepository.findAllByOrderByIdAsc();
+        return lessons != null ? lessons : new ArrayList<>();
     }
 
     public Optional<Lesson> getLessonById(Long id) {
