@@ -342,10 +342,20 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
                 sendLessonsList(chatId);
             } else if (callbackData.startsWith("lessons_page:")) {
                 // Пагинация списка уроков
-                String[] parts = callbackData.split(":");
-                String listType = parts[1];
-                int page = Integer.parseInt(parts[2]);
-                sendLessonsList(chatId, page, listType, messageId);
+                try {
+                    String[] parts = callbackData.split(":");
+                    if (parts.length >= 3) {
+                        String listType = parts[1];
+                        int page = Integer.parseInt(parts[2]);
+                        sendLessonsList(chatId, page, listType, messageId);
+                    } else {
+                        log.error("Invalid pagination callback format: {}", callbackData);
+                        sendMessage(chatId, "Ошибка навигации. Попробуйте выбрать урок заново.");
+                    }
+                } catch (NumberFormatException e) {
+                    log.error("Error parsing page number from callback: {}", callbackData, e);
+                    sendMessage(chatId, "Ошибка навигации. Попробуйте выбрать урок заново.");
+                }
             } else if (callbackData.equals("answered")) {
                 // Игнорируем нажатия на уже отвеченные вопросы
                 return;
@@ -509,14 +519,54 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
         List<Lesson> lessons = lessonService.getAllLessons();
 
         if (lessons.isEmpty()) {
-            sendMessage(chatId, "Уроки пока не добавлены.");
+            if (messageId != null) {
+                // Обновляем существующее сообщение
+                EditMessageText editMessage = new EditMessageText();
+                editMessage.setChatId(chatId.toString());
+                editMessage.setMessageId(messageId);
+                editMessage.setText("Уроки пока не добавлены.");
+                try {
+                    execute(editMessage);
+                } catch (TelegramApiException e) {
+                    log.error("Error updating message", e);
+                }
+            } else {
+                sendMessage(chatId, "Уроки пока не добавлены.");
+            }
             return;
         }
 
         int pageSize = 50;
         int totalPages = (int) Math.ceil((double) lessons.size() / pageSize);
+        
+        // Проверяем валидность страницы
+        if (page < 0) {
+            page = 0;
+        }
+        if (page >= totalPages) {
+            page = totalPages - 1;
+        }
+        
         int startIndex = page * pageSize;
         int endIndex = Math.min(startIndex + pageSize, lessons.size());
+        
+        // Проверяем, что есть уроки для отображения
+        if (startIndex >= lessons.size() || startIndex < 0) {
+            if (messageId != null) {
+                EditMessageText editMessage = new EditMessageText();
+                editMessage.setChatId(chatId.toString());
+                editMessage.setMessageId(messageId);
+                editMessage.setText("Уроки пока не добавлены.");
+                try {
+                    execute(editMessage);
+                } catch (TelegramApiException e) {
+                    log.error("Error updating message", e);
+                }
+            } else {
+                sendMessage(chatId, "Уроки пока не добавлены.");
+            }
+            return;
+        }
 
         InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
@@ -586,7 +636,17 @@ public class TelegramBotHandler extends TelegramLongPollingBot {
             try {
                 execute(editMessage);
             } catch (TelegramApiException e) {
-                log.error("Error updating lessons list", e);
+                log.error("Error updating lessons list, sending new message instead", e);
+                // Если не удалось обновить, отправляем новое сообщение
+                SendMessage message = new SendMessage();
+                message.setChatId(chatId.toString());
+                message.setText(text);
+                message.setReplyMarkup(keyboard);
+                try {
+                    execute(message);
+                } catch (TelegramApiException e2) {
+                    log.error("Error sending lessons list", e2);
+                }
             }
         } else {
             // Отправляем новое сообщение

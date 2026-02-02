@@ -22,6 +22,7 @@ public class QuestionData {
     }
 
     public void reset() {
+        
         question = null;
         answers.clear();
         correctAnswerIndex = null;
